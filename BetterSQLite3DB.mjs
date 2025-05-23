@@ -21,8 +21,8 @@ class Statement {
 }
 
 export default class SQLite3DB {
-  constructor(filename = ":memory:", options) {
-    this.db = new Database(filename, options);
+  constructor(filename = ":memory:") {
+    this.db = new Database(filename);
   }
   run(sql, ...args) {
     this.db.prepare(sql).run(...args);
@@ -44,10 +44,10 @@ export default class SQLite3DB {
   serialize(...args) {
     return this.db.serialize(...args);
   }
+  pragma(...args) {
+    return this.db.pragma(...args);
+  }
   close() {
     return this.db.close();
-  }
-  end() {
-    return this.close();
   }
 }

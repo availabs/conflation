@@ -1,6 +1,6 @@
 import { pipeline, Transform } from "node:stream";
 import { join } from "node:path";
-import { existsSync, readdirSync } from "node:fs"
+import { existsSync, readdirSync, copyFileSync, rmSync } from "node:fs"
 
 import { dsvFormat as d3dsvFormat } from "d3-dsv"
 import { format as d3format } from "d3-format"
@@ -15,10 +15,12 @@ import createGraph from "ngraph.graph"
 
 import SQLite3DB from "./BetterSQLite3DB.mjs"
 
+const ACTIVE_DB_PATH = "./sqlite/active_db.slite"
+
 export default class MyGraph {
   constructor(config) {
     this.config = { ...config };
-    this.checkpoint = "checkpoint-0";
+    this.checkpoint = null
 
     this.db = null;
 
@@ -28,6 +30,7 @@ export default class MyGraph {
   }
   async finalize() {
     await this.db.close();
+    rmSync(ACTIVE_DB_PATH);
   }
   logInfo(...args) {
     const string = args.reduce((a, c) => {
@@ -49,20 +52,45 @@ export default class MyGraph {
   }
   loadLatestCheckpoint() {
     const checkpoints = readdirSync("./checkpoints");
-    checkpoints.push("checkpoint-0");
     checkpoints.sort((a, b) => {
       const [, anum] = a.split("-");
       const [, bnum] = b.split("-");
       return +bnum - +anum;
     });
-    this.checkpoint = checkpoints[0];
-    this.db = this.loadFromDisk(join("./checkpoints", this.checkpoint));
-    this.logInfo("LOADED CHECKPOINT:", this.checkpoint);
+    if (checkpoints.length) {
+      this.checkpoint = checkpoints[0];
+      this.db = this.loadFromDisk(join("./checkpoints", this.checkpoint));
+      this.logInfo("LOADED CHECKPOINT:", this.checkpoint);
+    }
+    else {
+      this.db = new SQLite3DB(ACTIVE_DB_PATH);
+    }
+    this.db.pragma('journal_mode = WAL');
+    this.db.pragma('cache_size = -4096');
     return this;
+  }
+  async saveCheckpoint(checkpoint) {
+    const filepath = join("./checkpoints", checkpoint);
+    await this.saveToDisk(filepath);
+  }
+  async saveToDisk(filepath) {
+    await this.db.run(`VACUUM main INTO '${ filepath }';`);
+  }
+  loadFromDisk(filepath) {
+    if (existsSync(filepath)) {
+      this.logInfo("FILE", filepath, "EXISTS. LOADING SQLITE DB.");
+      copyFileSync(filepath, ACTIVE_DB_PATH);
+    }
+    else {
+      this.logInfo("FILE", filepath, "DOES NOT EXIST. CREATING NEW SQLITE DB.");
+    }
+    return new SQLite3DB(ACTIVE_DB_PATH);
   }
   async run() {
     switch (this.checkpoint) {
       case "checkpoint-1":
+        // return this.runCheckpointTwo();
+      case "checkpoint-0":
         return this.runCheckpointOne();
       default:
         return this.runCheckpointZero();
@@ -97,7 +125,7 @@ export default class MyGraph {
 
     await this.reportStats();
 
-    await this.saveCheckpoint("checkpoint-1");
+    await this.saveCheckpoint("checkpoint-0");
 
     await this.runCheckpointOne();
   }
@@ -156,7 +184,7 @@ export default class MyGraph {
       SELECT MAX(node_id) AS max_node_id
         FROM nodes;
     `;
-    const [{ max_node_id }] = this.db.get(maxNodeIdSql);
+    const [{ max_node_id }] = await this.db.get(maxNodeIdSql);
     let node_id = +max_node_id;
     const getNewNodeId = () => {
       return ++node_id;
@@ -171,9 +199,8 @@ export default class MyGraph {
           reversed,
           'incoming' AS dir
         FROM edges
-        WHERE to_node IN (
-          SELECT node_id FROM intersections
-        )
+          JOIN intersections
+            ON edges.to_node = intersections.node_id
 
       UNION
 
@@ -185,12 +212,11 @@ export default class MyGraph {
           reversed,
           'outgoing' AS dir
         FROM edges
-        WHERE from_node IN (
-          SELECT node_id FROM intersections
-        )
+          JOIN intersections
+            ON edges.from_node = intersections.node_id
     `;
     this.logInfo("QUERYING INTERSECTION EDGES");
-    const intersectionEdges = this.db.all(intersectionEdgesSql);
+    const intersectionEdges = await this.db.all(intersectionEdgesSql);
     const grouped = d3group(intersectionEdges, e => e.dir, e => e.dir === "incoming" ? e.to_node : e.from_node);
 
     const [
@@ -209,13 +235,14 @@ export default class MyGraph {
     const intersectionNodesSql = `
       SELECT *
         FROM nodes
-        WHERE node_id IN (SELECT node_id FROM intersections);
+          JOIN intersections
+            ON nodes.node_id = intersections.node_id;
     `;
     this.logInfo("QUERYING INTERSECTION NODES");
-    const iterator = this.db.prepare(intersectionNodesSql).iterate();
+    const nodes = this.db.all(intersectionNodesSql);
 
     this.logInfo("PROCESSING INTERSECTIONS");
-    for (const { node_id, lon, lat } of iterator) {
+    for (const { node_id, lon, lat } of nodes) {
       const incoming = incomingEdges.get(node_id);
       const outgoing = outgoingEdges.get(node_id);
 
@@ -248,16 +275,18 @@ export default class MyGraph {
         }
       }
     }
+
+    await this.saveCheckpoint("checkpoint-1");
   }
   async initializeSQLiteDBforCheckpointOne() {
-    this.db.run(`
+    await this.db.run(`
       CREATE TABLE old_nodes(
         node_id INT PRIMARY KEY
       );
     `);
-    const oldNodeInsertStmt = this.db.prepare("INSERT INTO old_nodes(node_id) VALUES(?);");
+    const oldNodeInsertStmt = await this.db.prepare("INSERT INTO old_nodes(node_id) VALUES(?);");
 
-    this.db.run(`
+    await this.db.run(`
       CREATE TABLE new_nodes(
         node_id INT PRIMARY KEY,
         lon DOUBLE PRECISION,
@@ -265,27 +294,28 @@ export default class MyGraph {
         base_node_id INT
       );
     `);
-    const newNodeInsertStmt = this.db.prepare("INSERT INTO new_nodes(node_id, lon, lat, base_node_id) VALUES($node_id, $lon, $lat, $base_node_id)");
+    const newNodeInsertStmt = await this.db.prepare("INSERT INTO new_nodes(node_id, lon, lat, base_node_id) VALUES($node_id, $lon, $lat, $base_node_id)");
 
-    this.db.run(`
+    await this.db.run(`
       CREATE TABLE new_edges(
         way_id INT,
         from_node INT,
         to_node INT,
         highway TEXT,
         reversed INT,
-        PRIMARY KEY(way_id, from_node, to_node),
-        FOREIGN KEY(from_node) REFERENCES new_nodes(node_id) ON DELETE CASCADE,
-        FOREIGN KEY(to_node) REFERENCES new_nodes(node_id) ON DELETE CASCADE
+        PRIMARY KEY(way_id, from_node, to_node)
       );
     `);
-    const newEdgeInsertStmt = this.db.prepare("INSERT INTO new_edges(way_id, from_node, to_node, highway, reversed) VALUES($way_id, $from_node, $to_node, $highway, $reversed)");
+    const newEdgeInsertStmt = await this.db.prepare("INSERT INTO new_edges(way_id, from_node, to_node, highway, reversed) VALUES($way_id, $from_node, $to_node, $highway, $reversed)");
 
     return [
       oldNodeInsertStmt,
       newNodeInsertStmt,
       newEdgeInsertStmt
     ]
+  }
+  async runCheckpointTwo() {
+    this.logInfo("RUNNING CHECKPOINT TWO");
   }
 
   getNodeTransform(node_insert_stmt) {
@@ -491,22 +521,5 @@ export default class MyGraph {
     `;
     const [{ count: intersections }] = await this.db.get(intersectionCountSql);
     this.logInfo("LOADED", intFormat(intersections), "INTERSECTIONS INTO SQLITE DB");
-  }
-  async saveCheckpoint(checkpoint) {
-    const filepath = join("./checkpoints", checkpoint);
-    await this.saveToDisk(filepath);
-  }
-  async saveToDisk(filepath, options) {
-    await this.db.backup(filepath, options);
-  }
-  loadFromDisk(filepath) {
-    if (existsSync(filepath)) {
-      this.logInfo("FILE", filepath, "EXISTS. LOADING SQLITE DB.");
-      const db = new SQLite3DB(filepath);
-      const buffer = db.serialize();
-      return new SQLite3DB(buffer);
-    }
-    this.logInfo("FILE", filepath, "DOES NOT EXISTS. CREATING NEW SQLITE DB.");
-    return new SQLite3DB();
   }
 }

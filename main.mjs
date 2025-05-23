@@ -1,5 +1,3 @@
-import { execSync } from 'node:child_process';
-
 import MyGraph from "./MyGraph.mjs"
 
 import config from "./config.js"

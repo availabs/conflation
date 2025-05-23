@@ -1,3 +1,4 @@
 node_modules/
-checkpoints/
+checkpoints/*
+sqlite/*
 config.js
