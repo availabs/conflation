@@ -1,4 +1,5 @@
 node_modules/
 checkpoints/*
-sqlite/*
+logs/*
+sqlite/
 config.js

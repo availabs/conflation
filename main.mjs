@@ -1,15 +1,21 @@
 import MyGraph from "./MyGraph.mjs"
 
 import config from "./config.js"
-const { npmrds2, OSM_view_id, NPMRDS_view_id } = config;
 
 const main = async () => {
 
   const myGraph = new MyGraph(config);
 
-  await myGraph.loadLatestCheckpoint().run();
-
-  await myGraph.finalize();
+  try {
+    await myGraph.loadLatestCheckpoint().run();
+  }
+  catch (e) {
+    myGraph.logInfo("ERROR:\n", JSON.stringify(e, null, 3));
+    console.log("ERROR:\n", e);
+  }
+  finally {
+    await myGraph.finalize();
+  }
 }
 
 main();

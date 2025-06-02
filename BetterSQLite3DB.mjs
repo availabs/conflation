@@ -9,8 +9,7 @@ class Statement {
     return this;
   }
   get(...args) {
-    const row = this.stmt.get(...args);
-    return [row];
+    return this.stmt.get(...args);
   }
   all(...args) {
     return this.stmt.all(...args);
@@ -29,8 +28,7 @@ export default class SQLite3DB {
     return this;
   }
   get(sql, ...args) {
-    const row = this.db.prepare(sql).get(...args);
-    return [row];
+    return this.db.prepare(sql).get(...args);
   }
   all(sql, ...args) {
     return this.db.prepare(sql).all(...args);
