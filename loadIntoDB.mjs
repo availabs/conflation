@@ -154,6 +154,11 @@ const logInfo = (...args) => {
 	
 	logInfo("PROCESSED", d3intFormat(numWays), "TOTAL WAYS");
 
+	const insertSourceSql = `
+		INSERT INTO data_manager.sources(name, type, )
+			VALUES('Checkpoint 1 Test', 'gis_dataset')
+	`
+
 	db.close();
 	await client.end();
 })()
