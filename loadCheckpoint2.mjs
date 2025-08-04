@@ -40,135 +40,164 @@ const logInfo = (...args) => {
 }
 
 (async () => {
-    rmSync(WORKING_DIRECTORY, { force: true, recursive: true });
-    mkdirSync(WORKING_DIRECTORY);
+  rmSync(WORKING_DIRECTORY, { force: true, recursive: true });
+  mkdirSync(WORKING_DIRECTORY);
 
 	logInfo("LOADING SQLITE DB FROM", SQLITE_FILE_PATH);
 	copyFileSync(SQLITE_FILE_PATH, ACTIVE_DB_PATH);
 
 	const db = new SQLite3DB(ACTIVE_DB_PATH);
 
-    const client = new pgStuff.Client(npmrds2);
-    await client.connect();
+	logInfo("CONNECTING CLIENT");
+  const client = new pgStuff.Client(npmrds2);
+  await client.connect();
+	logInfo("CLIENT CONNECTED");
 
-    const createTableSql = `
-    	BEGIN;
+  const createTableSql = `
+  	BEGIN;
 
-    	DROP TABLE IF EXISTS osm_datasets.checkpoint_2_test;
+  	DROP TABLE IF EXISTS osm_datasets.checkpoint_2_test;
 
-    	CREATE TABLE osm_datasets.checkpoint_2_test(
-    		ogc_fid BIGSERIAL PRIMARY KEY,
-    		tmc TEXT,
-    		result_type TEXT,
-    		rank INT,
-    		miles DOUBLE PRECISION,
-    		wkb_geometry GEOMETRY(GEOMETRY, 4032)
-    	);
+  	CREATE TABLE osm_datasets.checkpoint_2_test(
+  		ogc_fid BIGSERIAL PRIMARY KEY,
+  		tmc TEXT,
+  		linestring_index SMALLINT,
+  		tmc_index SMALLINT,
+  		result_type TEXT,
+  		rank INT,
+  		start_score DOUBLE PRECISION,
+  		end_score DOUBLE PRECISION,
+  		miles_score DOUBLE PRECISION,
+  		miles DOUBLE PRECISION,
+  		wkb_geometry GEOMETRY(GEOMETRY, 4032)
+  	);
 
-    	COMMIT;
-    `;
-    await client.query(createTableSql);
-    logInfo("CREATED OUTPUT TABLE: osm_datasets.checkpoint_2_test");
+  	COMMIT;
+  `;
+  await client.query(createTableSql);
+  logInfo("CREATED OUTPUT TABLE: osm_datasets.checkpoint_2_test");
 
-    const queryResultsSql = "SELECT * FROM results ORDER BY tmc;";
-    const resultsIterator = db.prepare(queryResultsSql).iterate();
+  const queryResultsSql = "SELECT * FROM results ORDER BY tmc;";
+  const resultsIterator = db.prepare(queryResultsSql).iterate();
 
-    let incAmt = 500;
-    let logInfoAt = incAmt;
-    let numResults = 0;
+  let incAmt = 10000;
+  let logInfoAt = incAmt;
+  let numResults = 0;
 
-    logInfo("INSERTING RESULTS");
-    async function* insertResults() {
-	    for (const { tmc, path, rank, miles } of resultsIterator) {
+  logInfo("INSERTING RESULTS");
+  async function* insertResults() {
+    for (const result of resultsIterator) {
 
-	    	const linestring = JSON.parse(path).map(n => `${ n.lon } ${ n.lat }`);
+    	const {
+    		tmc,
+    		linestring_index,
+    		tmc_index,
+    		path,
+    		rank,
+    		start_score,
+    		end_score,
+    		miles_score,
+    		miles
+    	} = result;
 
-	    	if (linestring.length > 1) {
-	    		const values = [tmc, "result", rank, miles, `LINESTRING(${ linestring })`];
+    	const linestring = JSON.parse(path).map(n => `${ n.lon } ${ n.lat }`);
 
-		    	if (++numResults >= logInfoAt) {
-		    		logInfo("INSERTED", d3intFormat(numResults), "RESULTS");
-		    		logInfoAt += incAmt;
-		    	}
+    	if (linestring.length > 1) {
+    		const values = [
+    			tmc,
+    			linestring_index,
+    			tmc_index,
+    			"result",
+    			rank,
+    			start_score,
+    			end_score,
+    			miles_score,
+    			miles,
+    			`LINESTRING(${ linestring })`
+    		];
 
-		    	yield `${ values.join("|") }\n`;
-	    	}
-	    }
-    }
-
-    const copyFromStreamForResults = client.query(
-    	pgCopyStreams.from(`
-        	COPY osm_datasets.checkpoint_2_test(tmc, result_type, rank, miles, wkb_geometry)
-        	FROM STDIN WITH (FORMAT TEXT, DELIMITER '|', NULL '')
-      	`)
-    );
-
-    await new Promise((resolve, reject) => {
-    	pipeline(
-    		Readable.from(insertResults()),
-    		copyFromStreamForResults,
-    		error => {
-    			if (error) {
-    				logInfo("STREAM ERROR:", error);
-    				reject(error);
-    			}
-    			else {
-    				resolve();
-    			}
-    		}
-    	)
-    });
-
-    const queryProcessedTMCsSql = `
-    	SELECT tmc, geojson, miles
-    		FROM tmcs
-    		WHERE tmc IN (
-    			SELECT DISTINCT tmc FROM results
-    		)
-    `;
-    const processedTMCsIterator = db.prepare(queryProcessedTMCsSql).iterate();
-
-	incAmt = 100;
-    logInfoAt = incAmt;
-    let numTMCs = 0;
-
-    logInfo("INSERTING TMCs");
-    async function* insertTMCs() {
-	    for (const { tmc, miles, geojson } of processedTMCsIterator) {
-
-	    	if (++numTMCs >= logInfoAt) {
-	    		logInfo("INSERTED", d3intFormat(numTMCs), "TMCs");
+	    	if (++numResults >= logInfoAt) {
+	    		logInfo("INSERTED", d3intFormat(numResults), "RESULTS");
 	    		logInfoAt += incAmt;
 	    	}
-	    	const tmcMiles = miles || turf.length(JSON.parse(geojson), { units: "miles" });
-	    	const values = [tmc, "tmc-base", 0, tmcMiles, geojson];
 
 	    	yield `${ values.join("|") }\n`;
-	    }
+    	}
     }
+  }
 
-    const copyFromStreamForTMCs = client.query(
-    	pgCopyStreams.from(`
-        	COPY osm_datasets.checkpoint_2_test(tmc, result_type, rank, miles, wkb_geometry)
-        	FROM STDIN WITH (FORMAT TEXT, DELIMITER '|', NULL '')
-      	`)
-    );
+  const copyFromStreamForResults = client.query(
+  	pgCopyStreams.from(`
+      	COPY osm_datasets.checkpoint_2_test(tmc, linestring_index, tmc_index, result_type, rank, start_score, end_score, miles_score, miles, wkb_geometry)
+      	FROM STDIN WITH (FORMAT TEXT, DELIMITER '|', NULL '')
+    	`)
+  );
 
-    await new Promise((resolve, reject) => {
-    	pipeline(
-    		Readable.from(insertTMCs()),
-    		copyFromStreamForTMCs,
-    		error => {
-    			if (error) {
-    				logInfo("STREAM ERROR:", error);
-    				reject(error);
-    			}
-    			else {
-    				resolve();
-    			}
-    		}
-    	)
-    });
+  await new Promise((resolve, reject) => {
+  	pipeline(
+  		Readable.from(insertResults()),
+  		copyFromStreamForResults,
+  		error => {
+  			if (error) {
+  				logInfo("STREAM ERROR:", error);
+  				reject(error);
+  			}
+  			else {
+  				resolve();
+  			}
+  		}
+  	)
+  });
+
+  const queryProcessedTMCsSql = `
+  	SELECT tmc, linestring_index, tmc_index, geojson, miles
+  		FROM tmcs
+  		WHERE tmc IN (
+  			SELECT DISTINCT tmc FROM results
+  		)
+  `;
+  const processedTMCsIterator = db.prepare(queryProcessedTMCsSql).iterate();
+
+	incAmt = 2500;
+  logInfoAt = incAmt;
+  let numTMCs = 0;
+
+  logInfo("INSERTING TMCs");
+  async function* insertTMCs() {
+    for (const { tmc, linestring_index, tmc_index, miles, geojson } of processedTMCsIterator) {
+
+    	if (++numTMCs >= logInfoAt) {
+    		logInfo("INSERTED", d3intFormat(numTMCs), "TMC SEGMENTS");
+    		logInfoAt += incAmt;
+    	}
+    	const values = [tmc, linestring_index, tmc_index, "tmc-base", 0, miles, geojson];
+
+    	yield `${ values.join("|") }\n`;
+    }
+  }
+
+  const copyFromStreamForTMCs = client.query(
+  	pgCopyStreams.from(`
+      	COPY osm_datasets.checkpoint_2_test(tmc, linestring_index, tmc_index, result_type, rank, miles, wkb_geometry)
+      	FROM STDIN WITH (FORMAT TEXT, DELIMITER '|', NULL '')
+    	`)
+  );
+
+  await new Promise((resolve, reject) => {
+  	pipeline(
+  		Readable.from(insertTMCs()),
+  		copyFromStreamForTMCs,
+  		error => {
+  			if (error) {
+  				logInfo("STREAM ERROR:", error);
+  				reject(error);
+  			}
+  			else {
+  				resolve();
+  			}
+  		}
+  	)
+  });
 
 // SET DAMA TABLES
 	const deleteViewSql = `
@@ -215,7 +244,7 @@ const logInfo = (...args) => {
 	`;
 	await client.query(initMetadataSql, [view_id]);
 
-  	const tilesName = `npmrds2_s${ source_id }_v${ view_id }_${ Date.now() }`;
+  	const tilesName = `npmrds2_s${ source_id }_v${ view_id }`;
   	const tilesMetadata = {
   		tiles: {
 	  		"sources": [
@@ -250,5 +279,5 @@ const logInfo = (...args) => {
 	db.close();
 	await client.end();
 
-    rmSync(WORKING_DIRECTORY, { force: true, recursive: true });
+  rmSync(WORKING_DIRECTORY, { force: true, recursive: true });
 })()

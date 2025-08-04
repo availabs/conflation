@@ -66,6 +66,9 @@ const logInfo = (...args) => {
     `;
     await client.query(createNodesTableSql);
 
+    const { nodes_count } = db.get("SELECT COUNT(1) AS nodes_count FROM nodes;");
+    logInfo("LOADING NODES");
+
     const queryNodesSql = `
     	SELECT node_id, base_node_id, lon, lat
     		FROM nodes;
@@ -93,8 +96,7 @@ const logInfo = (...args) => {
       	`)
     );
 
-    logInfo("LOADING NODES");
-
+    logInfo("LOADING", d3intFormat(nodes_count), "NODES");
     await new Promise((resolve, reject) => {
     	pipeline(
     		Readable.from(getNodes()),
@@ -143,6 +145,8 @@ const logInfo = (...args) => {
     `;
     await client.query(createEdgesTableSql);
 
+    const { edges_count } = db.get("SELECT COUNT(1) AS edges_count FROM edges;");
+
     const queryEdgesSql = `
     	SELECT from_node, to_node, length
     		FROM edges;
@@ -182,8 +186,7 @@ const logInfo = (...args) => {
       	`)
     );
 
-    logInfo("LOADING EDGES");
-
+    logInfo("LOADING", d3intFormat(edges_count), "EDGES");
     await new Promise((resolve, reject) => {
     	pipeline(
     		Readable.from(getEdges()),

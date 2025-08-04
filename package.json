@@ -5,10 +5,12 @@
   "main": "main.mjs",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "node --max-old-space-size=32768 ./main.mjs",
-    "load-cp-1": "node --max-old-space-size=32768 ./loadCheckpoint1.mjs",
-    "load-cp-2": "node --max-old-space-size=32768 ./loadCheckpoint2.mjs",
-    "load-pgr": "node --max-old-space-size=32768 ./load_pgRouter.mjs"
+    "start": "node --max-old-space-size=49152 ./main.mjs",
+    "load-cp-1": "node --max-old-space-size=49152 ./loadCheckpoint1.mjs",
+    "load-cp-2": "node --max-old-space-size=49152 ./loadCheckpoint2.mjs",
+    "load-cp-3": "node --max-old-space-size=49152 ./loadCheckpoint3.mjs",
+    "load-pgr": "node --max-old-space-size=49152 ./load_pgRouter.mjs",
+    "load-problem-tmcs": "node --max-old-space-size=49152 ./loadProblemTMCs.mjs"
   },
   "author": "",
   "license": "ISC",
@@ -21,8 +23,9 @@
     "d3-quadtree": "^3.0.1",
     "d3-scale": "^4.0.2",
     "d3-time-format": "^4.1.0",
-    "ngraph.graph": "^20.0.1",
-    "ngraph.path": "^1.5.0",
+    "graphology": "^0.26.0",
+    "graphology-shortest-path": "^2.1.0",
+    "graphology-simple-path": "^0.2.0",
     "pg": "^8.16.0",
     "pg-copy-streams": "^6.0.6",
     "split2": "^4.2.0",

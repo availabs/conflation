@@ -1,21 +1,22 @@
-import TheConflationator from "./TheConflationator.mjs"
+import TheConflationator from "./TheConflationator/index.mjs"
 
 import config from "./config.js"
 
-const main = async () => {
+(async () => {
 
   const theConflationator = new TheConflationator(config);
+  await theConflationator.initialize();
 
   try {
     await theConflationator.loadLatestCheckpoint().run();
   }
   catch (e) {
-    theConflationator.logInfo("ERROR:\n", JSON.stringify(e, null, 3));
-    console.log("ERROR:\n", e);
+    theConflationator.logInfo("ERROR:\n", e.message || e);
+    if (e.stack) {
+      theConflationator.logInfo(e.stack);
+    }
   }
   finally {
     await theConflationator.finalize();
   }
-}
-
-main();
+})();
