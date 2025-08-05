@@ -1,8 +1,6 @@
 import pgStuff from "pg";
 
-import { format as d3format } from "d3-format"
-
-const d3intFormat = d3format(",d");
+import { D3_INT_FORMAT } from "../constants.mjs"
 
 import loadTMCs from "./loadTMCs.mjs"
 import loadNodes from "./loadNodes.mjs"
@@ -33,11 +31,10 @@ async function runCheckpointZero(TheConflationator) {
 
     await client.end();
 
-    // findIntersections(TheConflationator);
+    findIntersections(TheConflationator);
 
     reportStatsForCheckpointZero(TheConflationator);
 }
-
 export default runCheckpointZero;
 
 async function getDataTable(client, viewId) {
@@ -48,6 +45,45 @@ async function getDataTable(client, viewId) {
 	`;
 	const { rows: [{ data_table }]} = await client.query(sql, [viewId]);
 	return data_table;
+}
+
+function findIntersections(TheConflationator) {
+  const sql = `
+    WITH
+      edges_cte AS (
+        SELECT
+            from_node AS node_id,
+            way_id,
+            reversed
+          FROM edges
+
+        UNION
+
+        SELECT
+            to_node AS node_id,
+            way_id,
+            reversed
+          FROM edges
+      ),
+      way_counts AS (
+        SELECT node_id, COUNT(DISTINCT way_id) AS num_ways
+          FROM edges_cte
+          GROUP BY 1
+      ),
+      reversed_nodes AS (
+        SELECT DISTINCT node_id
+          FROM edges_cte
+          WHERE reversed = 1
+      )
+    INSERT INTO intersections(node_id)
+      SELECT DISTINCT node_id
+        FROM way_counts
+          JOIN reversed_nodes
+            USING(node_id)
+        WHERE num_ways > 2;
+  `;
+  TheConflationator.logInfo("FINDING INTERSECTIONS");
+  TheConflationator.db.run(sql);
 }
 
 function initializeCheckpointZero(TheConflationator) {
@@ -131,26 +167,26 @@ async function reportStatsForCheckpointZero(TheConflationator) {
 	    FROM tmcs
   	`;
   	const { tmcs_count, num_segments } = TheConflationator.db.get(tmcCountSql);
-  	TheConflationator.logInfo("LOADED", d3intFormat(num_segments), "SEGMENTS DERIVED FROM", d3intFormat(tmcs_count), "TMCs INTO SQLITE DB");
-  	
+  	TheConflationator.logInfo("LOADED", D3_INT_FORMAT(num_segments), "SEGMENTS DERIVED FROM", D3_INT_FORMAT(tmcs_count), "TMCs INTO SQLITE DB");
+
   	const nodeCountSql = `
 	    SELECT COUNT(1) AS nodes_count
 	    FROM nodes
   	`;
   	const { nodes_count } = TheConflationator.db.get(nodeCountSql);
-  	TheConflationator.logInfo("LOADED", d3intFormat(nodes_count), "NODES INTO SQLITE DB");
+  	TheConflationator.logInfo("LOADED", D3_INT_FORMAT(nodes_count), "NODES INTO SQLITE DB");
 
   	const edgeCountSql = `
 	    SELECT COUNT(1) AS edges_count
 	    FROM edges
   	`;
   	const { edges_count } = TheConflationator.db.get(edgeCountSql);
-  	TheConflationator.logInfo("LOADED", d3intFormat(edges_count), "EDGES INTO SQLITE DB");
+  	TheConflationator.logInfo("LOADED", D3_INT_FORMAT(edges_count), "EDGES INTO SQLITE DB");
 
   	const intersectionCountSql = `
 	    SELECT COUNT(1) AS intersections_count
 	    FROM intersections
   	`;
   	const { intersections_count } = TheConflationator.db.get(intersectionCountSql);
-  	TheConflationator.logInfo("LOADED", d3intFormat(intersections_count), "INTERSECTIONS INTO SQLITE DB");
+  	TheConflationator.logInfo("LOADED", D3_INT_FORMAT(intersections_count), "INTERSECTIONS INTO SQLITE DB");
 }

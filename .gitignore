@@ -1,4 +1,3 @@
 node_modules/
-checkpoints/*
-sqlite/
+saved_checkpoints/
 config.js

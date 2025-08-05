@@ -23,7 +23,7 @@ const { npmrds2 } = config;
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-const SQLITE_FILE_PATH = join(__dirname, "checkpoints", "checkpoint-3.sqlite");
+const SQLITE_FILE_PATH = join(__dirname, "TheConflationator", "saved_checkpoints", "checkpoint-3.sqlite");
 
 const WORKING_DIRECTORY = join(__dirname, "sqlite");
 const ACTIVE_DB_PATH = join(WORKING_DIRECTORY, "active_db.sqlite");

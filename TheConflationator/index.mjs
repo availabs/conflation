@@ -13,6 +13,9 @@ import { fileURLToPath } from 'node:url';
 import SQLite3DB from "./BetterSQLite3DB.mjs"
 
 import RunCheckpointZero from "./checkpoint-0/index.mjs"
+import RunCheckpointOne from "./checkpoint-1/index.mjs"
+import RunCheckpointTwo from "./checkpoint-2/index.mjs"
+import RunCheckpointThree from "./checkpoint-3/index.mjs"
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -20,7 +23,7 @@ const __dirname = dirname(__filename);
 const WORKING_DIRECTORY = join(__dirname, "working_directory");
 const ACTIVE_DB_PATH = join(WORKING_DIRECTORY, "active_db.sqlite");
 
-const CHECKPOINTS_DIRECTORY = join(__dirname, "checkpoints");
+const CHECKPOINTS_DIRECTORY = join(__dirname, "saved_checkpoints");
 const CHECKPOINT_REGEX = /^checkpoint[-]\d+.sqlite$/;
 
 export default class TheConflationator {
@@ -103,7 +106,7 @@ export default class TheConflationator {
   async run() {
     switch (this.checkpoint) {
       case "checkpoint-3":
-        return (async () => { this.logInfo("NO CHECKPOINT 4")})();
+        return this.runCheckpointFour()
       case "checkpoint-2":
         return this.runCheckpointThree();
       case "checkpoint-1":
@@ -115,16 +118,34 @@ export default class TheConflationator {
     }
   }
   async runCheckpointZero() {
-    await RunCheckpointZero(this);
+    const cp0returnValue = await RunCheckpointZero(this);
 
     await this.saveCheckpoint("checkpoint-0");
 
-    return this.runCheckpointOne();
+    return this.runCheckpointOne(cp0returnValue);
   }
-  async runCheckpointOne() {
+  async runCheckpointOne(cp0returnValue) {
+    const cp1returnValue = await RunCheckpointOne(this);
+
+    await this.saveCheckpoint("checkpoint-1");
+
+    return this.runCheckpointTwo(cp1returnValue);
   }
-  async runCheckpointTwo() {
+  async runCheckpointTwo(cp1returnValue) {
+    const cp2returnValue = await RunCheckpointTwo(this);
+
+    await this.saveCheckpoint("checkpoint-2");
+
+    return this.runCheckpointThree(cp2returnValue);
   }
-  async runCheckpointThree() {
+  async runCheckpointThree(cp2returnValue) {
+    const cp3returnValue = await RunCheckpointThree(this, cp2returnValue);
+
+    await this.saveCheckpoint("checkpoint-3");
+
+    return this.runCheckpointFour(cp3returnValue);
+  }
+  async runCheckpointFour(cp3returnValue) {
+    this.logInfo("NO CHECKPOINT 4")
   }
 }
