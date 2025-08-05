@@ -1,3 +1,4 @@
 node_modules/
 saved_checkpoints/
+tmc_logs/
 config.js
