@@ -761,7 +761,7 @@ async function reportStatsForCheckpointThree(TheConflationator) {
 
   const numBadTMCsSql = `
     SELECT COUNT(DISTINCT tmc) AS num_bad_tmcs
-      FROM num_bad_tmcs
+      FROM problem_tmcs
   `;
   const { num_bad_tmcs } = TheConflationator.db.get(numBadTMCsSql);
 

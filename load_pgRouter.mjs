@@ -16,13 +16,15 @@ import pgCopyStreams from "pg-copy-streams";
 
 import SQLite3DB from "./BetterSQLite3DB.mjs";
 
+import setDamaTables from "./setDamaTables.mjs";
+
 import config from "./config.js"
 const { npmrds2 } = config;
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-const SQLITE_FILE_PATH = join(__dirname, "TheConflationator", "saved_checkpoints", "checkpoint-2.sqlite");
+const SQLITE_FILE_PATH = join(__dirname, "TheConflationator", "saved_checkpoints", "checkpoint-1.sqlite");
 
 const WORKING_DIRECTORY = join(__dirname, "sqlite");
 const ACTIVE_DB_PATH = join(WORKING_DIRECTORY, "active_db.sqlite");
@@ -212,97 +214,12 @@ const logInfo = (...args) => {
     `;
     await client.query(edgesGeomIndexSql);
 
-    const edgesTileData = {
-    	"type": "line",
-    	"paint": {
-    		"line-width": 3,
-    		"line-offset": 3
-    	}
-    }
-    await setDamaTables("PG Router Edges", "edges", client, edgesTileData);
+// SET DAMA TABLES
+// ARGS: client, name, data_type, data_table
+    // await setDamaTables(client, "PG Router Edges", "gis_dataset", "osm_datasets.edges");
 
-// RELEASE RESOURCES
 	db.close();
 	await client.end();
 
     rmSync(WORKING_DIRECTORY, { force: true, recursive: true });
-})()
-
-const setDamaTables = async (sourceName, tableName, client, tileData) => {
-	logInfo("GENERATING DAMA TABLES");
-
-	const deleteViewSql = `
-		DELETE FROM data_manager.views
-			WHERE source_id IN (
-				SELECT source_id
-					FROM data_manager.sources
-					WHERE name = $1
-			);
-	`;
-	await client.query(deleteViewSql, [sourceName]);
-
-	const deleteSourceSql = `
-		DELETE FROM data_manager.sources
-			WHERE name = $1;
-	`;
-	await client.query(deleteSourceSql, [sourceName]);
-
-	const insertSourceSql = `
-		INSERT INTO data_manager.sources(name, type)
-			VALUES($1, 'gis_dataset')
-		RETURNING source_id;
-	`;
-	const { rows: [{ source_id }] } = await client.query(insertSourceSql, [sourceName]);
-	logInfo("GOT NEW SOURCE ID:", source_id);
-
-	const dataTable = `osm_datasets.${ tableName }`;
-
-	const insertViewSql = `
-		INSERT INTO data_manager.views(source_id, data_type, table_schema, table_name, data_table)
-			VALUES(${ source_id }, 'gis_dataset', 'osm_datasets', $1, $2)
-		RETURNING view_id;
-	`;
-	const { rows: [{ view_id }] } = await client.query(insertViewSql, [tableName, dataTable]);
-	logInfo("GOT NEW VIEW ID:", view_id);
-
-	const statisticsSql = `
-		UPDATE data_manager.sources
-			SET statistics = '{"auth": {"users": {}, "groups": {"AVAIL": "10", "public": "2"}}}'
-			WHERE source_id = $1;
-	`;
-	await client.query(statisticsSql, [source_id]);
-
-	const initMetadataSql = `
-		CALL _data_manager_admin.initialize_dama_src_metadata_using_view($1)
-	`;
-	await client.query(initMetadataSql, [view_id]);
-
-  	const tilesName = `npmrds2_s${ source_id }_v${ view_id }_${ Date.now() }`;
-  	const tilesMetadata = {
-  		tiles: {
-	  		"sources": [
-	  			{	"id": tilesName,
-	  				"source": {
-	  					"tiles": [`https://graph.availabs.org/dama-admin/npmrds2/tiles/${ view_id }/{z}/{x}/{y}/t.pbf`],
-	  					"format": "pbf",
-	  					"type": "vector"
-	  				}
-	  			}
-	  		],
-	  		"layers": [
-	  			{	"id": `${ source_id }_v${ view_id }_polygons`,
-	  				"source": tilesName,
-	  				"source-layer": `view_${ view_id }`,
-	  				...tileData
-	  			}
-	  		]
-	  	}
-  	};
-
-  	const updateMetadataWithTilesSql = `
-  		UPDATE data_manager.views
-  			SET metadata = COALESCE(metadata, '{}') || '${ JSON.stringify(tilesMetadata) }'::JSONB
-  			WHERE view_id = $1;
-  	`;
-  	await client.query(updateMetadataWithTilesSql, [view_id]);
-}
+})();

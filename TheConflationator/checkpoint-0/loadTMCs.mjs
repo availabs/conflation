@@ -22,7 +22,7 @@ function getTmcTransform(TheConflationator, tmc_insert_stmt) {
 
 		    const mainGeometry = JSON.parse(geojson);
 
-		    const MUST_BREAK_AT = 45.0;
+		    const MUST_BREAK_AT = 30.0;
 		    const BEARING_LIMIT = 30.0;
 		    const BEARING_LENGTH = 0.05;
 
@@ -57,9 +57,10 @@ function getTmcTransform(TheConflationator, tmc_insert_stmt) {
 			          prevBearing = bearing;
 			        }
 			        else {
-			          if ((Math.abs(prevBearing - bearing) >= MUST_BREAK_AT) ||
-			              ((Math.abs(prevBearing - bearing) >= BEARING_LIMIT) &&
-			                (length >= BEARING_LENGTH))) {
+			          // if ((Math.abs(prevBearing - bearing) >= MUST_BREAK_AT) ||
+			          //     ((Math.abs(prevBearing - bearing) >= BEARING_LIMIT) &&
+			          //       (length >= BEARING_LENGTH))) {
+			          if (Math.abs(prevBearing - bearing) >= MUST_BREAK_AT) {
 			            linestringSlices.push(i, i - 1);
 			            prevBearing = bearing;
 			            length = 0;
@@ -86,7 +87,8 @@ function getTmcTransform(TheConflationator, tmc_insert_stmt) {
 
 // LOOK FOR LARGE TMC CHUNKS AND BREAK THEM INTO SMALLER CHUNKS,
 // MAINTAINING ORIGINAL POINTS
-		        	if (segmentMiles >= MAX_SEGMENT_MILES) {
+		        	// if (segmentMiles >= MAX_SEGMENT_MILES) {
+		        	if (false) {
 		          		const numChunks = Math.ceil(segmentMiles) * 2;
 		          		const idealMiles = segmentMiles / numChunks;
 
@@ -130,8 +132,8 @@ function getTmcTransform(TheConflationator, tmc_insert_stmt) {
 		          		}
 			        }
 			        else {
-			          	tmc_insert_stmt.run(tmc, lsIndex, tmcIndex, segmentMiles, f_system || 6, JSON.stringify(geometry));
-			          	++tmcIndex;
+		          	tmc_insert_stmt.run(tmc, lsIndex, tmcIndex, segmentMiles, f_system || 6, JSON.stringify(geometry));
+		          	++tmcIndex;
 			        }
 		      	}
 		    }
