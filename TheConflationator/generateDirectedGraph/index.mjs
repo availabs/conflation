@@ -1,16 +1,14 @@
 
-async function runCheckpointOne(TheConflationator) {
-  TheConflationator.logInfo("SKIPPING CHECKPOINT ONE");
+async function runCheckpoint(TheConflationator, cp) {
+  TheConflationator.logInfo("SKIPPING CHECKPOINT:", cp);
   return;
-
-  TheConflationator.logInfo("RUNNING CHECKPOINT ONE");
 
   const [
     nodeInsertStmt,
     edgeInsertStmt,
     edgeDeleteStmt,
     selectNodeStmt
-  ] = await initializeCheckpointOne();
+  ] = await initializeCheckpoint();
 
   const maxNodeIdSql = `
     SELECT MAX(node_id) AS max_node_id
@@ -264,9 +262,9 @@ async function runCheckpointOne(TheConflationator) {
 
   await reportStatsForCheckpointOne();
 }
-export default runCheckpointOne;
+export default runCheckpoint;
 
-function initializeCheckpointOne(TheConflationator) {
+function initializeCheckpoint(TheConflationator) {
   TheConflationator.logInfo("INITIALIZING SQLITE DB FOR CHECKPOINT ONE");
 
   const nodeInsertSql = `

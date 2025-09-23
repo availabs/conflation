@@ -20,12 +20,12 @@ import SQLite3DB from "./BetterSQLite3DB.mjs";
 import setDamaTables from "./setDamaTables.mjs";
 
 import config from "./config.js"
-const { npmrds2 } = config;
+const { db_info } = config;
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-const SQLITE_FILE_PATH = join(__dirname, "TheConflationator", "saved_checkpoints", "checkpoint-3.sqlite");
+const SQLITE_FILE_PATH = join(__dirname, "TheConflationator", "TMC_checkpoints", "checkpoint-3.sqlite");
 
 const WORKING_DIRECTORY = join(__dirname, "sqlite");
 const ACTIVE_DB_PATH = join(WORKING_DIRECTORY, "active_db.sqlite");
@@ -52,16 +52,16 @@ const logInfo = (...args) => {
 	const db = new SQLite3DB(ACTIVE_DB_PATH);
 
 	logInfo("CONNECTING CLIENT");
-	const client = new pgStuff.Client(npmrds2);
+	const client = new pgStuff.Client(db_info);
 	await client.connect();
 	logInfo("CLIENT CONNECTED");
 
 	const createTableSql = `
 		BEGIN;
 
-		DROP TABLE IF EXISTS osm_datasets.checkpoint_3_test;
+		DROP TABLE IF EXISTS osm_datasets.npmrds_checkpoint_3_test;
 
-		CREATE TABLE osm_datasets.checkpoint_3_test(
+		CREATE TABLE osm_datasets.npmrds_checkpoint_3_test(
 			ogc_fid BIGSERIAL PRIMARY KEY,
 			tmc TEXT,
 			miles DOUBLE PRECISION,
@@ -72,9 +72,9 @@ const logInfo = (...args) => {
 		COMMIT;
 	`;
 	await client.query(createTableSql);
-	logInfo("CREATED OUTPUT TABLE: osm_datasets.checkpoint_3_test");
+	logInfo("CREATED OUTPUT TABLE: osm_datasets.npmrds_checkpoint_3_test");
 
-	const finalResultsIterator = db.prepare("SELECT * FROM final_results;").iterate();
+	const finalResultsIterator = db.prepare("SELECT * FROM final_tmc_results;").iterate();
 
 	let incAmt = 5000;
 	let logInfoAt = incAmt;
@@ -98,7 +98,7 @@ const logInfo = (...args) => {
 
 	const copyFromStreamForFinalResults = client.query(
 		pgCopyStreams.from(`
-		  	COPY osm_datasets.checkpoint_3_test(tmc, miles, result_type, wkb_geometry)
+		  	COPY osm_datasets.npmrds_checkpoint_3_test(tmc, miles, result_type, wkb_geometry)
 		  	FROM STDIN WITH (FORMAT TEXT, DELIMITER '|', NULL '')
 		`)
 	);
@@ -120,10 +120,10 @@ const logInfo = (...args) => {
 	});
 
 	const queryTMCsSql = `
-		SELECT tmc, linestring_index, tmc_index, geojson, miles
+		SELECT tmc, ls_index, tmc_index, geojson, miles
 			FROM tmcs
 			WHERE tmc IN (
-				SELECT DISTINCT tmc FROM final_results
+				SELECT DISTINCT tmc FROM final_tmc_results
 			)
 	`;
     const tmcs = db.all(queryTMCsSql)
@@ -133,7 +133,7 @@ const logInfo = (...args) => {
                     );
 
     const tmcIndexSorter = group => group.sort((a, b) => +a.tmc_index - +b.tmc_index);
-    const tmcRollups = d3rollups(tmcs, tmcIndexSorter, r => r.tmc, r => r.linestring_index);
+    const tmcRollups = d3rollups(tmcs, tmcIndexSorter, r => r.tmc, r => r.ls_index);
 
     const fullTMCsMap = tmcRollups.reduce((a, c, i) => {
     	const [tmc, [[lsIndex, segments]]] = c;
@@ -178,7 +178,7 @@ const logInfo = (...args) => {
 
 	const copyFromStreamForTMCs = client.query(
 		pgCopyStreams.from(`
-		  	COPY osm_datasets.checkpoint_3_test(tmc, miles, result_type, wkb_geometry)
+		  	COPY osm_datasets.npmrds_checkpoint_3_test(tmc, miles, result_type, wkb_geometry)
 		  	FROM STDIN WITH (FORMAT TEXT, DELIMITER '|', NULL '')
 		`)
 	);
@@ -202,7 +202,7 @@ const logInfo = (...args) => {
 
 // SET DAMA TABLES
 // ARGS: client, name, data_type, data_table
-  	await setDamaTables(client, 'Checkpoint 3 Test', 'gis_dataset', 'osm_datasets.checkpoint_3_test');
+  	await setDamaTables(client, 'NPMRDS Checkpoint 3 Test', 'gis_dataset', 'osm_datasets.npmrds_checkpoint_3_test');
 
 	db.close();
 	await client.end();

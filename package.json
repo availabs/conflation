@@ -5,13 +5,23 @@
   "main": "main.mjs",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
+
     "start": "node --max-old-space-size=49152 ./main.mjs",
+    "start-tmc": "node --max-old-space-size=49152 ./main.mjs TMC",
+    "start-ris": "node --max-old-space-size=49152 ./main.mjs RIS",
+
     "load-cp1": "node --max-old-space-size=49152 ./loadCheckpoint1.mjs",
-    "load-cp2": "node --max-old-space-size=49152 ./loadCheckpoint2.mjs",
-    "load-cp3": "node --max-old-space-size=49152 ./loadCheckpoint3.mjs",
+    "load-npmrds-cp2": "node --max-old-space-size=49152 ./loadNpmrdsCheckpoint2.mjs",
+    "load-npmrds-cp3": "node --max-old-space-size=49152 ./loadNpmrdsCheckpoint3.mjs",
+    "load-ris-cp2": "node --max-old-space-size=49152 ./loadRisCheckpoint2.mjs",
+    "load-ris-cp3": "node --max-old-space-size=49152 ./loadRisCheckpoint3.mjs",
     "load-pgr": "node --max-old-space-size=49152 ./load_pgRouter.mjs",
     "load-problem-tmcs": "node --max-old-space-size=49152 ./loadProblemTMCs.mjs",
-    "load-em-all": "npm run load-cp2 && npm run load-cp3 && npm run load-problem-tmcs"
+    "load-problem-ris": "node --max-old-space-size=49152 ./loadProblemRIS.mjs",
+    "load-em-all": "npm run load-cp2 && npm run load-cp3 && npm run load-problem-tmcs",
+    "load-npmrds": "node --max-old-space-size=49152 ./loadNpmrdsConflation.mjs",
+    "load-ris": "node --max-old-space-size=49152 ./loadRisConflation.mjs",
+    "load-conflation": "node --max-old-space-size=49152 ./TheConflationator/loadConflation.mjs"
   },
   "author": "",
   "license": "ISC",

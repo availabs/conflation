@@ -22,12 +22,9 @@ function getTmcTransform(TheConflationator, tmc_insert_stmt) {
 
 		    const mainGeometry = JSON.parse(geojson);
 
-		    const MUST_BREAK_AT = 30.0;
-		    const BEARING_LIMIT = 30.0;
-		    const BEARING_LENGTH = 0.05;
-
-		    const MAX_SEGMENT_MILES = 0.25;
-		    const MIN_SEGMENT_LENGTH = 0.1;
+		    const MUST_BREAK_AT_DEGREES = 30.0;
+		    const MAX_SEGMENT_LENGTH = 0.25;
+		    const MIN_SEGMENT_LENGTH = MAX_SEGMENT_LENGTH * 0.5;
 
 // HANDLE EACH LINESTRING OF THE MULTILINESTRINGS SEPARATELY
 		    for (let lsIndex = 0; lsIndex < mainGeometry.coordinates.length; ++lsIndex) {
@@ -48,26 +45,26 @@ function getTmcTransform(TheConflationator, tmc_insert_stmt) {
 
 // TRAVEL ALONG THE TMC AND BREAK IT AT LARGE ANGLES,
 // MAINTAINING ORIGINAL POINTS
-		      	for (let i = 1; i < coordinates.length; ++i) {
-			        const from = coordinates[i - 1];
-			        const to = coordinates[i];
-			        const bearing = turf.bearing(from, to);
-			        length += turf.distance(from, to, { units: "miles" });
-			        if (i === 1) {
-			          prevBearing = bearing;
-			        }
-			        else {
-			          // if ((Math.abs(prevBearing - bearing) >= MUST_BREAK_AT) ||
-			          //     ((Math.abs(prevBearing - bearing) >= BEARING_LIMIT) &&
-			          //       (length >= BEARING_LENGTH))) {
-			          if (Math.abs(prevBearing - bearing) >= MUST_BREAK_AT) {
-			            linestringSlices.push(i, i - 1);
-			            prevBearing = bearing;
-			            length = 0;
-			          }
-			        }
-		      	}
-		      	linestringSlices.push(coordinates.length);
+		      	if (totalGeometryMiles > MIN_SEGMENT_LENGTH) {
+			      	for (let i = 1; i < coordinates.length; ++i) {
+				        const from = coordinates[i - 1];
+				        const to = coordinates[i];
+				        const bearing = turf.bearing(from, to);
+				        length += turf.distance(from, to, { units: "miles" });
+				        if (i === 1) {
+				          prevBearing = bearing;
+				        }
+				        else {
+				          if ((Math.abs(prevBearing - bearing) >= MUST_BREAK_AT_DEGREES) &&
+				          		(length >= MIN_SEGMENT_LENGTH)) {
+				            linestringSlices.push(i, i - 1);
+				            prevBearing = bearing;
+				            length = 0;
+				          }
+				        }
+			      	}
+			      }
+			      linestringSlices.push(coordinates.length);
 
 		      	const linestringSegments = [];
 		      	for (let i = 0; i < linestringSlices.length; i += 2) {
@@ -87,9 +84,8 @@ function getTmcTransform(TheConflationator, tmc_insert_stmt) {
 
 // LOOK FOR LARGE TMC CHUNKS AND BREAK THEM INTO SMALLER CHUNKS,
 // MAINTAINING ORIGINAL POINTS
-		        	// if (segmentMiles >= MAX_SEGMENT_MILES) {
-		        	if (false) {
-		          		const numChunks = Math.ceil(segmentMiles) * 2;
+		        	if (segmentMiles >= MAX_SEGMENT_LENGTH) {
+		          		const numChunks = Math.ceil(segmentMiles / MIN_SEGMENT_LENGTH);
 		          		const idealMiles = segmentMiles / numChunks;
 
 		          		let totalMiles = 0.0;
@@ -106,6 +102,7 @@ function getTmcTransform(TheConflationator, tmc_insert_stmt) {
 				            const remainingMiles = segmentMiles - totalMiles;
 				            if ((remainingMiles >= MIN_SEGMENT_LENGTH) &&
 				                (currentMiles >= idealMiles)) {
+				            // if (currentMiles >= idealMiles) {
 				              newSlices.push(i + 1, i);
 				              currentMiles = 0.0;
 				            }
@@ -127,13 +124,11 @@ function getTmcTransform(TheConflationator, tmc_insert_stmt) {
 		            		const segmentMiles = turf.length(geometry, { units: "miles" });
 
 // SAVING LINESTRING INDICES AND TMC INDICES ALLOWS FOR RECREATION OF MULTILINESTRINGS
-		            		tmc_insert_stmt.run(tmc, lsIndex, tmcIndex, segmentMiles, f_system || 6, JSON.stringify(geometry));
-		            		++tmcIndex;
+		            		tmc_insert_stmt.run(tmc, lsIndex, tmcIndex++, segmentMiles, f_system, JSON.stringify(geometry));
 		          		}
 			        }
 			        else {
-		          	tmc_insert_stmt.run(tmc, lsIndex, tmcIndex, segmentMiles, f_system || 6, JSON.stringify(geometry));
-		          	++tmcIndex;
+		          	tmc_insert_stmt.run(tmc, lsIndex, tmcIndex++, segmentMiles, f_system, JSON.stringify(geometry));
 			        }
 		      	}
 		    }
@@ -152,10 +147,12 @@ async function loadTMCs(TheConflationator, client, NPMRDS_table, tmc_insert_stmt
     		COPY (
       			SELECT
         			tmc,
-        			f_system,
+        			COALESCE(f_system, 6),
         			ST_AsGeoJSON(wkb_geometry)
       			FROM ${ NPMRDS_table }
-      				ORDER BY TMC
+  						WHERE (isprimary IS NOT NULL OR nhs IS NULL)
+  						AND tmc NOT LIKE 'C%'
+      					ORDER BY TMC
     		)
     		TO STDOUT WITH (FORMAT CSV, DELIMITER '|')
   		`)
