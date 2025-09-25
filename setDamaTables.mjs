@@ -9,7 +9,7 @@ const logInfo = (...args) => {
 	console.log(string);
 }
 
-async function setDamaTables(client, name, data_type, data_table) {
+async function setDamaTables(client, name, data_type, data_table, categories = []) {
 
 	const [table_schema, table_name] = data_table.split(".");
 
@@ -30,11 +30,11 @@ async function setDamaTables(client, name, data_type, data_table) {
 	await client.query(deleteSourceSql, [name]);
 
 	const insertSourceSql = `
-		INSERT INTO data_manager.sources(name, type)
-			VALUES($1, $2)
+		INSERT INTO data_manager.sources(name, type, categories)
+			VALUES($1, $2, $3)
 		RETURNING source_id;
 	`;
-	let values = [name, data_type];
+	let values = [name, data_type, JSON.stringify(categories)];
 	const { rows: [{ source_id }] } = await client.query(insertSourceSql, values);
 	logInfo("GOT NEW SOURCE ID:", source_id);
 

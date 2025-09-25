@@ -28,12 +28,15 @@ const SQLITE_FILE_PATH = join(__dirname, "TheConflationator", "RIS_checkpoints",
 
 	const queryConflationEdgesSql = `
 		SELECT
-				way_id,
-				way_index,
 				ris_id AS road_id,
 				ris_index AS road_index,
-				edge
-			FROM ris_conflation;
+				e.from_node,
+				e.to_node,
+				e.way_id
+			FROM ris_conflation AS r
+				JOIN edges AS e
+					ON r.from_node = e.from_node
+					AND r.to_node = e.to_node;
 	`;
 
 	const makeCopyFromStream = client => {
@@ -45,13 +48,20 @@ const SQLITE_FILE_PATH = join(__dirname, "TheConflationator", "RIS_checkpoints",
 		);
 	}
 
+	const damaArgs = [
+		'RIS Conflation 1.0',
+		'gis_dataset',
+		'osm_datasets.ris_conflation',
+		[["OSM Conflation", "Road Network"]]
+	]
+
 	const options = {
 		SQLITE_FILE_PATH,
 		createConflationTableSql,
 		queryConflationEdgesSql,
 		makeCopyFromStream,
 		incAmt: 50000,
-		damaArgs: ['RIS Conflation 1.0', 'gis_dataset', 'osm_datasets.ris_conflation']
+		damaArgs
 	}
 	await loadConflation(options);
 })()

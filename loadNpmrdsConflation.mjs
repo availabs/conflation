@@ -45,13 +45,20 @@ const SQLITE_FILE_PATH = join(__dirname, "TheConflationator", "checkpoints", "ch
 		);
 	}
 
+	const damaArgs = [
+		'NPMRDS Conflation 1.0',
+		'gis_dataset',
+		'osm_datasets.npmrds_conflation',
+		[["OSM Conflation", "Road Network"]]
+	]
+
 	const options = {
 		SQLITE_FILE_PATH,
 		createConflationTableSql,
 		queryConflationEdgesSql,
 		makeCopyFromStream,
 		incAmt: 20000,
-		damaArgs: ['NPMRDS Conflation 1.0', 'gis_dataset', 'osm_datasets.npmrds_conflation']
+		damaArgs
 	}
 	await loadConflation(options);
 })()

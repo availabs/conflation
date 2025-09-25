@@ -17,133 +17,133 @@ function getRisTransform(TheConflationator, ris_insert_stmt) {
 	let numRIS = 0;
 
 	return new Transform({
-	  	transform(chunk, encoding, next) {
-		    const [[ris_id, f_system, direction, divided, one_way, geojson]] = d3dsvFormatter.parseRows(chunk.toString());
+  	transform(chunk, encoding, next) {
+	    const [[ris_id, f_system, direction, divided, one_way, beg_mp, end_mp, geojson]] = d3dsvFormatter.parseRows(chunk.toString());
 
-		    // const needsReverse = (+direction === 2) || (+direction === 3);
+	    const reverseCoords = divided && (+direction === 2) && (+beg_mp < +end_mp);
 
-		    const mainGeometry = JSON.parse(geojson);
+	    const mainGeometry = JSON.parse(geojson);
 
-		    const MUST_BREAK_AT = 30.0;
-		    const MAX_SEGMENT_MILES = 0.25;
-		    const MIN_SEGMENT_LENGTH = MAX_SEGMENT_MILES * 0.5;
+	    const MUST_BREAK_AT = 30.0;
+	    const MAX_SEGMENT_MILES = 0.25;
+	    const MIN_SEGMENT_LENGTH = MAX_SEGMENT_MILES * 0.5;
 
 // HANDLE EACH LINESTRING OF THE MULTILINESTRINGS SEPARATELY
-		    for (let lsIndex = 0; lsIndex < mainGeometry.coordinates.length; ++lsIndex) {
+	    for (let lsIndex = 0; lsIndex < mainGeometry.coordinates.length; ++lsIndex) {
 
-		      	const coordinates = [...mainGeometry.coordinates[lsIndex]];
-		      	// if (needsReverse) {
-		      	// 	coordinates.reverse();
-		      	// }
+	      	const coordinates = [...mainGeometry.coordinates[lsIndex]];
+	      	if (reverseCoords) {
+	      		coordinates.reverse();
+	      	}
 
-		      	const geometry = {
-			        type: "LineString",
-			        coordinates
-		      	}
+	      	const geometry = {
+		        type: "LineString",
+		        coordinates
+	      	}
 
-		      	const totalGeometryMiles = turf.length(geometry, { units: "miles" });
+	      	const totalGeometryMiles = turf.length(geometry, { units: "miles" });
 
-		      	let prevBearing = null;
-		      	let length = 0;
+	      	let prevBearing = null;
+	      	let length = 0;
 
-		      	const linestringSlices = [0];
+	      	const linestringSlices = [0];
 
 // TRAVEL ALONG THE TMC AND BREAK IT AT LARGE ANGLES,
 // MAINTAINING ORIGINAL POINTS
-		      	if (totalGeometryMiles > MIN_SEGMENT_LENGTH) {
-			      	for (let i = 1; i < coordinates.length; ++i) {
-				        const from = coordinates[i - 1];
-				        const to = coordinates[i];
-				        const bearing = turf.bearing(from, to);
-				        length += turf.distance(from, to, { units: "miles" });
-				        if (i === 1) {
-				          prevBearing = bearing;
-				        }
-				        else {
-				          if ((Math.abs(prevBearing - bearing) >= MUST_BREAK_AT) &&
-				          		(length >= MIN_SEGMENT_LENGTH)) {
-				            linestringSlices.push(i, i - 1);
-				            prevBearing = bearing;
-				            length = 0;
-				          }
-				        }
-			      	}
-			      }
-			      linestringSlices.push(coordinates.length);
-
-		      	const linestringSegments = [];
-		      	for (let i = 0; i < linestringSlices.length; i += 2) {
-			        const s1 = linestringSlices[i];
-			        const s2 = linestringSlices[i + 1];
-			        linestringSegments.push(coordinates.slice(s1, s2));
+	      	if (totalGeometryMiles > MIN_SEGMENT_LENGTH) {
+		      	for (let i = 1; i < coordinates.length; ++i) {
+			        const from = coordinates[i - 1];
+			        const to = coordinates[i];
+			        const bearing = turf.bearing(from, to);
+			        length += turf.distance(from, to, { units: "miles" });
+			        if (i === 1) {
+			          prevBearing = bearing;
+			        }
+			        else {
+			          if ((Math.abs(prevBearing - bearing) >= MUST_BREAK_AT) &&
+			          		(length >= MIN_SEGMENT_LENGTH)) {
+			            linestringSlices.push(i, i - 1);
+			            prevBearing = bearing;
+			            length = 0;
+			          }
+			        }
 		      	}
+		      }
+		      linestringSlices.push(coordinates.length);
 
-		      	let ris_index = 0;
+	      	const linestringSegments = [];
+	      	for (let i = 0; i < linestringSlices.length; i += 2) {
+		        const s1 = linestringSlices[i];
+		        const s2 = linestringSlices[i + 1];
+		        linestringSegments.push(coordinates.slice(s1, s2));
+	      	}
 
-		      	for (const lsSegment of linestringSegments) {
-		        	const geometry = {
-		          		type: "LineString",
-		          		coordinates: [...lsSegment]
-		        	};
-		        	const segmentMiles = turf.length(geometry, { units: "miles" });
+	      	let ris_index = 0;
+
+	      	for (const lsSegment of linestringSegments) {
+	        	const geometry = {
+	          		type: "LineString",
+	          		coordinates: [...lsSegment]
+	        	};
+	        	const segmentMiles = turf.length(geometry, { units: "miles" });
 
 // LOOK FOR LARGE TMC CHUNKS AND BREAK THEM INTO SMALLER CHUNKS,
 // MAINTAINING ORIGINAL POINTS
-		        	if (segmentMiles >= MAX_SEGMENT_MILES) {
-	          		const numChunks = Math.ceil(segmentMiles / MIN_SEGMENT_LENGTH);
-	          		const idealMiles = segmentMiles / numChunks;
+	        	if (segmentMiles >= MAX_SEGMENT_MILES) {
+          		const numChunks = Math.ceil(segmentMiles / MIN_SEGMENT_LENGTH);
+          		const idealMiles = segmentMiles / numChunks;
 
-	          		let totalMiles = 0.0;
-	          		let currentMiles = 0.0;
+          		let totalMiles = 0.0;
+          		let currentMiles = 0.0;
 
-	          		const newSlices = [0];
+          		const newSlices = [0];
 
-	          		for (let i = 1; i < lsSegment.length - 1; ++i) {
-			            const from = lsSegment[i - 1];
-			            const to = lsSegment[i];
-			            const dist = turf.distance(from, to, { units: "miles" });
-			            totalMiles += dist;
-			            currentMiles += dist;
-			            const remainingMiles = segmentMiles - totalMiles;
-			            if ((remainingMiles >= MIN_SEGMENT_LENGTH) &&
-			                (currentMiles >= idealMiles)) {
-			            // if (currentMiles >= idealMiles) {
-			              newSlices.push(i + 1, i);
-			              currentMiles = 0.0;
-			            }
-	          		}
-	          		newSlices.push(lsSegment.length);
+          		for (let i = 1; i < lsSegment.length - 1; ++i) {
+		            const from = lsSegment[i - 1];
+		            const to = lsSegment[i];
+		            const dist = turf.distance(from, to, { units: "miles" });
+		            totalMiles += dist;
+		            currentMiles += dist;
+		            const remainingMiles = segmentMiles - totalMiles;
+		            if ((remainingMiles >= MIN_SEGMENT_LENGTH) &&
+		                (currentMiles >= idealMiles)) {
+		            // if (currentMiles >= idealMiles) {
+		              newSlices.push(i + 1, i);
+		              currentMiles = 0.0;
+		            }
+          		}
+          		newSlices.push(lsSegment.length);
 
-		          	const newSegments = [];
-		          	for (let i = 0; i < newSlices.length; i += 2) {
-			            const s1 = newSlices[i];
-			            const s2 = newSlices[i + 1];
-			            newSegments.push(lsSegment.slice(s1, s2));
-		          	}
+	          	const newSegments = [];
+	          	for (let i = 0; i < newSlices.length; i += 2) {
+		            const s1 = newSlices[i];
+		            const s2 = newSlices[i + 1];
+		            newSegments.push(lsSegment.slice(s1, s2));
+	          	}
 
-	          		for (const segment of newSegments) {
-	            		const geometry = {
-			              	type: "LineString",
-			              	coordinates: [...segment]
-	            		};
-	            		const segmentMiles = turf.length(geometry, { units: "miles" });
+          		for (const segment of newSegments) {
+            		const geometry = {
+		              	type: "LineString",
+		              	coordinates: [...segment]
+            		};
+            		const segmentMiles = turf.length(geometry, { units: "miles" });
 
 // SAVING LINESTRING INDICES AND TMC INDICES ALLOWS FOR RECREATION OF MULTILINESTRINGS
 // ris_id, linestring_index, ris_index, miles, f_system, geojson
-	            		ris_insert_stmt.run(ris_id, lsIndex, ris_index++, segmentMiles, f_system, JSON.stringify(geometry));
-	          		}
-			        }
-			        else {
-		          	ris_insert_stmt.run(ris_id, lsIndex, ris_index++, segmentMiles, f_system, JSON.stringify(geometry));
-			        }
-		      	}
-		    }
-		    if (++numRIS >= logInfoAt) {
-		      TheConflationator.logInfo("LOADED", d3intFormat(numRIS), "RIS ROADWAYS");
-		      logInfoAt += incAmt;
-		    }
-		    next();
-	  	}
+            		ris_insert_stmt.run(ris_id, lsIndex, ris_index++, segmentMiles, f_system, JSON.stringify(geometry));
+          		}
+		        }
+		        else {
+	          	ris_insert_stmt.run(ris_id, lsIndex, ris_index++, segmentMiles, f_system, JSON.stringify(geometry));
+		        }
+	      	}
+	    }
+	    if (++numRIS >= logInfoAt) {
+	      TheConflationator.logInfo("LOADED", d3intFormat(numRIS), "RIS ROADWAYS");
+	      logInfoAt += incAmt;
+	    }
+	    next();
+  	}
 	});
 }
 
@@ -182,8 +182,16 @@ async function loadRIS(TheConflationator, client, RIS_table, ris_insert_stmt) {
   						ELSE 6
   					END,
   					direction,
-		  			divided,
-		  			one_way,
+  					CASE
+  						WHEN divided = 'Y' THEN 1
+  						ELSE 0
+  					END,
+  					CASE
+  						WHEN one_way = 'Y' THEN 1
+  						ELSE 0
+  					END,
+  					beg_mp,
+  					end_mp,
       			ST_AsGeoJSON(wkb_geometry)
     			FROM ${ RIS_table }
     		)

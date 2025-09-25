@@ -68,6 +68,15 @@ const loadConflation = async options => {
 
 	logInfo("QUERYING CONFLATION EDGES");
 	const conflationEdges = db.all(queryConflationEdgesSql);
+	logInfo("RECEIVED", d3intFormat(conflationEdges.length), "CONFLATION EDGES");
+
+	logInfo("QUERYING NODES");
+	const nodes = db.all("SELECT * FROM nodes;");
+	logInfo("RECEIVED", d3intFormat(nodes.length), "NODES");
+	const nodesMap = nodes.reduce((a, c) => {
+		a.set(c.node_id, [+c.lon, +c.lat]);
+		return a;
+	}, new Map());
 
 	const roadGroups = d3groups(conflationEdges, e => e.road_id, e => e.way_id);
 
@@ -80,7 +89,10 @@ const loadConflation = async options => {
 			for (const [way_id, edges] of wayIdGroup) {
 
 				const coordinates = edges.sort((a, b) => a.road_index - b.road_index)
-					.map(e => JSON.parse(e.edge))
+					.map(e => {
+						const { from_node, to_node } = e;
+						return [nodesMap.get(from_node), nodesMap.get(to_node)];
+					})
 					.reduce((a, c, i) => {
 						if (i === 0) {
 							a.push(...c);

@@ -67,6 +67,8 @@ export default class TheConflationator {
       { cp: "checkpoint-3", func: runCombineRisSegments },
     ].map(({ cp, func }) => ({ cp, func: func.bind(this, this, cp) }), this);
 
+    this.network = network;
+
     this.checkpoints = network === "TMC" ? this.TMCcheckpoints :
                         network === "RIS" ? this.RIScheckpoints :
                                             this.checkpoints;

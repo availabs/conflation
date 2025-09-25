@@ -192,37 +192,41 @@ export default async function initializeCheckpoint(TheConflationator) {
   `
   const dropEdgeStmt = TheConflationator.db.prepare(dropEdgeSql);
 
-// UPDATE NPMRDS NETWORK
-  const selectEdgesToUpdateSql = `
-    SELECT *
-      FROM npmrds_conflation
+  let updateTmcNetwork = undefined;
+
+// UPDATE NPMRDS, IF NEEDED
+  if (TheConflationator.network === "NONE") {
+    const selectEdgesToUpdateSql = `
+      SELECT *
+        FROM npmrds_conflation
+          WHERE from_node = ?
+            AND to_node = ?
+    `;
+    const selectEdgesToUpdateStmt = TheConflationator.db.prepare(selectEdgesToUpdateSql);
+
+    const insertNewEdgeSql = `
+      INSERT INTO npmrds_conflation(tmc, tmc_index, from_node, to_node)
+        VALUES(?, ?, ?, ?);
+    `;
+    const insertNewEdgeStmt = TheConflationator.db.prepare(insertNewEdgeSql);
+
+    const deleteOldEdgeSql = `
+      DELETE FROM npmrds_conflation
         WHERE from_node = ?
           AND to_node = ?
-  `;
-  const selectEdgesToUpdateStmt = TheConflationator.db.prepare(selectEdgesToUpdateSql);
+    `;
+    const deleteOldEdgeStmt = TheConflationator.db.prepare(deleteOldEdgeSql);
 
-  const insertNewEdgeSql = `
-    INSERT INTO npmrds_conflation(tmc, tmc_index, from_node, to_node)
-      VALUES(?, ?, ?, ?);
-  `;
-  const insertNewEdgeStmt = TheConflationator.db.prepare(insertNewEdgeSql);
+    updateTmcNetwork = update => {
+      const [from_node, new_node, to_node] = update;
 
-  const deleteOldEdgeSql = `
-    DELETE FROM npmrds_conflation
-      WHERE from_node = ?
-        AND to_node = ?
-  `;
-  const deleteOldEdgeStmt = TheConflationator.db.prepare(deleteOldEdgeSql);
+      const edgesToUpdate = selectEdgesToUpdateStmt.all(from_node, to_node);
 
-  const updateTmcNetwork = update => {
-    const [from_node, new_node, to_node] = update;
-
-    const edgesToUpdate = selectEdgesToUpdateStmt.all(from_node, to_node);
-
-    for (const { tmc, tmc_index } of edgesToUpdate) {
-      insertNewEdgeStmt.run(tmc, tmc_index, from_node, new_node);
-      insertNewEdgeStmt.run(tmc, tmc_index + 0.1, new_node, to_node);
-      deleteOldEdgeStmt.run(from_node, to_node);
+      for (const { tmc, tmc_index } of edgesToUpdate) {
+        insertNewEdgeStmt.run(tmc, tmc_index, from_node, new_node);
+        insertNewEdgeStmt.run(tmc, tmc_index + 0.1, new_node, to_node);
+        deleteOldEdgeStmt.run(from_node, to_node);
+      }
     }
   }
 

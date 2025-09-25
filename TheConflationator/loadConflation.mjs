@@ -62,12 +62,12 @@ class WayBucket {
 		for (const edge of this.edges) {
 			if (newEdge.ris_id && !edge.ris_id) {
 				edge.ris_id = newEdge.ris_id;
-				edge.ris_index = newEdge.ris_index;
+				// edge.ris_index = newEdge.ris_index;
 				return true;
 			}
 			else if (newEdge.tmc && !edge.tmc) {
 				edge.tmc = newEdge.tmc;
-				edge.tmc_index = newEdge.tmc_index;
+				// edge.tmc_index = newEdge.tmc_index;
 				return true;
 			}
 		}
@@ -83,10 +83,10 @@ class WayBucket {
 			highway: newEdge.highway,
 
 			tmc: newEdge.tmc,
-			tmc_index: newEdge.tmc_index,
+			// tmc_index: newEdge.tmc_index,
 
 			ris_id: newEdge.ris_id,
-			ris_index: newEdge.ris_index
+			// ris_index: newEdge.ris_index
 		});
 
 		return true;
@@ -138,16 +138,37 @@ class WayBucket {
 	await client.query(createConflationTableSql);
 	logInfo("CREATED CONFLATION TABLE: osm_datasets.osm_conflation_1");
 
-	const queryAllConflationEdgesSql = `
+	const queryConflationEdgesSql = `
+		WITH conflated_edges AS (
+			SELECT
+					tmc,
+
+					'no-ris' AS ris_id,
+
+					from_node,
+					to_node
+
+				FROM npmrds_conflation
+
+			UNION
+
+			SELECT
+					'no-tmc' AS tmc,
+
+					ris_id,
+
+					from_node,
+					to_node
+
+				FROM ris_conflation
+		)
 		SELECT
 				e.way_id,
 				e.pos AS way_index,
 
-				n.tmc,
-				n.tmc_index,
+				COALESCE(c.tmc, 'no-tmc') AS tmc,
 
-				NULL AS ris_id,
-				NULL AS ris_index,
+				COALESCE(c.ris_id, 'no-ris') AS ris_id,
 
 				e.from_node,
 				e.to_node,
@@ -155,36 +176,13 @@ class WayBucket {
 				e.highway,
 				e.reversed
 
-			FROM npmrds_conflation AS n
-				RIGHT JOIN edges AS e
-					ON n.from_node = e.from_node
-					AND n.to_node = e.to_node
-
-		UNION
-
-		SELECT
-				e.way_id,
-				e.pos AS way_index,
-
-				NULL AS tmc,
-				NULL AS tmc_index,
-
-				r.ris_id,
-				r.ris_index,
-
-				e.from_node,
-				e.to_node,
-
-				e.highway,
-				e.reversed
-
-			FROM ris_conflation AS r
-				RIGHT JOIN edges AS e
-					ON r.from_node = e.from_node
-					AND r.to_node = e.to_node
+			FROM edges AS e
+				LEFT JOIN conflated_edges AS c
+					ON e.from_node = c.from_node
+					AND e.to_node = c.to_node
 	`;
 	logInfo("LOADING CONFLATION EDGES");
-	const conflationEdges = db.all(queryAllConflationEdgesSql);
+	const conflationEdges = db.all(queryConflationEdgesSql);
 	logInfo("LOADED", d3intFormat(conflationEdges.length), "CONFLATION EDGES");
 
 	logInfo("STREAMING CONFLATION EDGES");
@@ -194,7 +192,8 @@ class WayBucket {
 	const damaArgs = [
 		'OSM Conflation 1.0',
 		'gis_dataset',
-		'osm_datasets.osm_conflation_1'
+		'osm_datasets.osm_conflation_1',
+		[['OSM Conflation', 'Road Network']]
 	];
 	await setDamaTables(client, ...damaArgs);
 
@@ -214,7 +213,7 @@ const streamEdges = async (allEdges, client, db) => {
 		return a;
 	}, new Map());
 
-	const incAmt = 50000;
+	const incAmt = 100000;
 	let logInfoAt = incAmt;
 	let numInserted = 0;
 
@@ -310,7 +309,7 @@ const streamEdges = async (allEdges, client, db) => {
 						logInfoAt += incAmt;
 					}
 
-					yield `${ values.join("|") }\n`;
+					yield `${ values.map(v => v === "no-ris" || v === "no-tmc" ? null : v).join("|") }\n`;
 				}
 			}
 		}
@@ -323,7 +322,6 @@ const streamEdges = async (allEdges, client, db) => {
 		`)
 	);
 
-	logInfo("BEGINING STREAMING");
 	await new Promise((resolve, reject) => {
 		pipeline(
 			Readable.from(yieldConflationEdges()),
