@@ -1,6 +1,6 @@
-import { existsSync, mkdirSync } from "node:fs"
-import { join, dirname } from "node:path";
-import { fileURLToPath } from 'node:url';
+// import { existsSync, mkdirSync } from "node:fs"
+// import { join, dirname } from "node:path";
+// import { fileURLToPath } from 'node:url';
 
 import { MultiDirectedGraph } from "graphology"
 import { dijkstra } from 'graphology-shortest-path';
@@ -9,10 +9,10 @@ import {
   D3_INT_FORMAT
 } from "../constants.mjs"
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
+// const __filename = fileURLToPath(import.meta.url);
+// const __dirname = dirname(__filename);
 
-const TMC_LOGS_DIRECTORY = join(__dirname, "tmc_logs");
+// const TMC_LOGS_DIRECTORY = join(__dirname, "tmc_logs");
 
 async function reportStats(TheConflationator) {
   const numNoPathsSql = `
@@ -50,9 +50,9 @@ async function reportStats(TheConflationator) {
 
 export default async function initializeCheckpoint(TheConflationator) {
 
-  if (!existsSync(TMC_LOGS_DIRECTORY)) {
-    mkdirSync(TMC_LOGS_DIRECTORY);
-  }
+  // if (!existsSync(TMC_LOGS_DIRECTORY)) {
+  //   mkdirSync(TMC_LOGS_DIRECTORY);
+  // }
 
   const maxNodeIdSql = `
     SELECT MAX(node_id) AS max_node_id
@@ -193,7 +193,6 @@ export default async function initializeCheckpoint(TheConflationator) {
   const dropEdgeStmt = TheConflationator.db.prepare(dropEdgeSql);
 
   return [
-    TMC_LOGS_DIRECTORY,
     getNewNodeId,
     queryResultsSql,
     querySegmentsSql,

@@ -13,6 +13,7 @@ import * as turf from "@turf/turf";
 
 import {
   BEARING_SCALE,
+  MAX_F_SYSTEM_RANK,
   HIGHWAY_TO_F_SYSTEM_MAP,
   D3_INT_FORMAT,
   DISTANCE_THRESHOLD,
@@ -157,9 +158,48 @@ const filterUnwantedEdges = (lsSegments, graph, pathfinder) => {
   return osmNodes;
 }
 
+const checkNodes = (nodes, graph) => {
+  return nodes.reduce((a, c, i, nodes) => {
+    if (i === 0) return a;
+
+    const from_node = nodes[i - 1];
+    const to_node = nodes[i];
+
+    const edgeKey = `${ from_node }-${ to_node }`;
+
+    const okEdge = from_node !== to_node;
+    const hasEdge = graph.hasEdge(edgeKey);
+
+    const edgeIsOk = okEdge && hasEdge;
+
+    const [isOk, bads] = a;
+
+    return [
+      isOk && edgeIsOk,
+      !edgeIsOk ? [...bads, edgeKey] : bads
+    ]
+  }, [nodes.length > 1, []]);
+}
+
+const rankEdgeCandidate = (candidateEdge, currentEdge, direction) => {
+  const candidateEdgeBearing = candidateEdge.bearing;
+  const currentEdgeBearing = currentEdge.bearing;
+  const bearingDiff = Math.abs(currentEdgeBearing - candidateEdgeBearing);
+  const bearingValue = BEARING_SCALE(bearingDiff);
+
+  const candidateEdgeFsystem = HIGHWAY_TO_F_SYSTEM_MAP[candidateEdge.highway] || 6.0;
+  const currentEdgeFsystem = HIGHWAY_TO_F_SYSTEM_MAP[currentEdge.highway] || 6.0;
+  const fSystemValue = MAX_F_SYSTEM_RANK - Math.abs(candidateEdgeFsystem - currentEdgeFsystem) * (MAX_F_SYSTEM_RANK / 6.0);
+
+  const wayIdBonus = ((bearingValue + fSystemValue) >= 240 * 0.9) &&
+                      (currentEdge.way_id === candidateEdge.way_id) &&
+                      ((currentEdge.pos + direction) === candidateEdge.pos) ? 2 : 1
+
+  return (bearingValue + fSystemValue) * wayIdBonus;
+}
+
 async function runCheckpoint(initialize, TheConflationator) {
   const [
-    TMC_LOGS_DIRECTORY,
     getNewNodeId,
     queryResultsSql,
     querySegmentsSql,
@@ -216,71 +256,12 @@ async function runCheckpoint(initialize, TheConflationator) {
       const osmNodes = filterUnwantedEdges(lsSegments, graph, pathfinder);
 
 // CHECK FOR NOT-EXISTANT EDGES
-      const [isOk, badEdges] = osmNodes.reduce((a, c, i, osmNodes) => {
-        if (i === 0) return a;
-
-        const from_node = osmNodes[i - 1];
-        const to_node = osmNodes[i];
-
-        const edgeKey = `${ from_node }-${ to_node }`;
-
-        const okEdge = from_node !== to_node;
-        const hasEdge = graph.hasEdge(edgeKey);
-
-        const edgeIsOk = okEdge && hasEdge;
-
-        const [isOk, bads] = a;
-
-        return [
-          isOk && edgeIsOk,
-          !edgeIsOk ? [...bads, edgeKey] : bads
-        ]
-      }, [osmNodes.length > 1, []]);
+      const [isOk, badEdges] = checkNodes(osmNodes, graph);
 
       if (!isOk) {
         insertProblemRoadStmt.run(road_id, "bad-nodes");
-
-        // async function* yielder() {
-        //   yield `NOT OK: ${ road_id }`;
-        //   yield JSON.stringify(lsSegments.map(lss => ({ ...lss, path: JSON.parse(lss.path) })), null, 3);
-        //   yield JSON.stringify(osmNodes, null, 3);
-        //   yield JSON.stringify(badEdges, null, 3);
-        // }
-
-        // await new Promise((resolve, reject) => {
-        //   pipeline(
-        //     Readable.from(yielder()),
-        //     createWriteStream(join(TMC_LOGS_DIRECTORY, `${ road_id }-${ lsIndex }.json`)),
-        //     error => {
-        //       if (error) {
-        //         reject(error);
-        //       }
-        //       else {
-        //         resolve();
-        //       }
-        //     }
-        //   )
-        // });
       }
       else {
-
-        const rankEdgeCandidate = (candidateEdge, currentEdge, direction) => {
-          const candidateEdgeBearing = candidateEdge.bearing;
-          const currentEdgeBearing = currentEdge.bearing;
-          const bearingDiff = Math.abs(currentEdgeBearing - candidateEdgeBearing);
-          const bearingValue = BEARING_SCALE(bearingDiff);
-
-          const candidateEdgeFsystem = HIGHWAY_TO_F_SYSTEM_MAP[candidateEdge.highway] || 6.0;
-          const currentEdgeFsystem = HIGHWAY_TO_F_SYSTEM_MAP[currentEdge.highway] || 6.0;
-          const fSystemValue = 120.0 - Math.abs(candidateEdgeFsystem - currentEdgeFsystem) * 20.0;
-
-          const wayIdBonus = ((bearingValue + fSystemValue) >= 240 * 0.9) &&
-                              (currentEdge.way_id === candidateEdge.way_id) &&
-                              ((currentEdge.pos + direction) === candidateEdge.pos) ? 2 : 1
-
-          return (bearingValue + fSystemValue) * wayIdBonus;
-        }
-// END rankEdgeCandidate
 
         const roadSegments = segmentsGrouped.get(road_id).get(lsIndex);
         const roadLinestring = roadSegments.reduce((a, c, i) => {
@@ -647,52 +628,10 @@ async function runCheckpoint(initialize, TheConflationator) {
           return a;
         }, []);
 
-        const [isStillOk, badEdges] = newOsmNodes.reduce((a, c, i, newOsmNodes) => {
-          if (i === 0) return a;
-
-          const from_node = newOsmNodes[i - 1];
-          const to_node = newOsmNodes[i];
-
-          const edgeKey = `${ from_node }-${ to_node }`;
-
-          const okEdge = from_node !== to_node;
-          const hasEdge = graph.hasEdge(edgeKey);
-
-          const edgeIsOk = okEdge && hasEdge;
-
-          const [isOk, bads] = a;
-
-          return [
-            isOk && edgeIsOk,
-            !edgeIsOk ? [...bads, edgeKey] : bads
-          ];
-        }, [true, []]);
+        const [isStillOk, badEdges] = checkNodes(newOsmNodes, graph);
 
         if (!isStillOk) {
           insertProblemRoadStmt.run(road_id, "bad-nodes");
-
-          // async function* yielder() {
-          //   yield `NOT STILL OK: ${ road_id }`;
-          //   yield JSON.stringify(lsSegments.map(lss => ({ ...lss, path: JSON.parse(lss.path) })), null, 3);
-          //   yield JSON.stringify(osmNodes, null, 3);
-          //   yield JSON.stringify(newOsmNodes, null, 3);
-          //   yield JSON.stringify(badEdges, null, 3);
-          // }
-
-          // await new Promise((resolve, reject) => {
-          //   pipeline(
-          //     Readable.from(yielder()),
-          //     createWriteStream(join(TMC_LOGS_DIRECTORY, `${ road_id }-${ lsIndex }.json`)),
-          //     error => {
-          //       if (error) {
-          //         reject(error);
-          //       }
-          //       else {
-          //         resolve();
-          //       }
-          //     }
-          //   )
-          // });
         }
         else {
 
@@ -722,19 +661,8 @@ async function runCheckpoint(initialize, TheConflationator) {
 
           for (let i = 1; i < newOsmNodes.length; ++i) {
             const from_node = newOsmNodes[i - 1];
-            // const fromNode = graph.getNodeAttributes(from_node);
-
             const to_node = newOsmNodes[i];
-            // const toNode = graph.getNodeAttributes(to_node);
 
-            // const edge_key = `${ from_node }-${ to_node }`;
-
-            // const { way_id, pos } = graph.getEdgeAttributes(edge_key);
-
-            // const edge = JSON.stringify(
-            //   [[fromNode.lon, fromNode.lat], [toNode.lon, toNode.lat]]
-            // );
-            // road_id, road_index, from_node, to_node
             insertConflationStmt.run(road_id, i - 1, from_node, to_node);
           }
 
