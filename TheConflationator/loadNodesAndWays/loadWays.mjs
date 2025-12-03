@@ -27,8 +27,8 @@ function getWayTransform(TheConflationator, edge_insert_stmt) {
       const nodes = TheConflationator.db.all(selectNodesSql.replace("__NODE_IDs__", refs));
       const nodesMap = nodes.reduce((a, c) => { a[c.node_id] = [c.lon, c.lat]; return a; }, {});
 
-      let needsForward = tags.oneway !== "-1";
-      let needsReverse = (tags.oneway === "-1") || ((tags.oneway !== "yes") && (tags.highway !== "motorway"));
+      const needsForward = tags.oneway !== "-1";
+      const needsReverse = (tags.oneway === "-1") || ((tags.oneway !== "yes") && (tags.highway !== "motorway"));
 
       if (needsForward) {
 

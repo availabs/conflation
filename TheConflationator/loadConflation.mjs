@@ -100,7 +100,7 @@ class WayBucket {
 	}
 }
 
-(async options => {
+(async () => {
   rmSync(WORKING_DIRECTORY, { force: true, recursive: true });
   mkdirSync(WORKING_DIRECTORY);
 
@@ -114,88 +114,102 @@ class WayBucket {
   await client.connect();
 	logInfo("CLIENT CONNECTED");
 
-	const createConflationTableSql = `
+	// const createConflationTableSql = `
+	// 	BEGIN;
+
+	// 	DROP TABLE IF EXISTS osm_datasets.osm_conflation_1;
+
+	// 	CREATE TABLE osm_datasets.osm_conflation_1(
+	// 		ogc_fid BIGSERIAL PRIMARY KEY,
+	// 		osm BIGINT,
+	// 		ris TEXT,
+	// 		tmc TEXT,
+	// 		year INT,
+	// 		dir INT,
+	// 		n INT,
+	// 		osm_fwd INT, --1 for non-reversed, - for reversed
+	// 		miles DOUBLE PRECISION,
+	// 		wkb_geometry GEOMETRY(LineString, 4032)
+	// 	);
+
+	// 	COMMIT;
+	// `;
+
+	// await client.query(createConflationTableSql);
+	// logInfo("CREATED CONFLATION TABLE: osm_datasets.osm_conflation_1");
+
+	// const queryConflationEdgesSql = `
+	// 	WITH conflated_edges AS (
+	// 		SELECT
+	// 				tmc,
+
+	// 				'no-ris' AS ris_id,
+
+	// 				from_node,
+	// 				to_node
+
+	// 			FROM npmrds_conflation
+
+	// 		UNION
+
+	// 		SELECT
+	// 				'no-tmc' AS tmc,
+
+	// 				ris_id,
+
+	// 				from_node,
+	// 				to_node
+
+	// 			FROM ris_conflation
+	// 	)
+	// 	SELECT
+	// 			e.way_id,
+	// 			e.pos AS way_index,
+
+	// 			COALESCE(c.tmc, 'no-tmc') AS tmc,
+
+	// 			COALESCE(c.ris_id, 'no-ris') AS ris_id,
+
+	// 			e.from_node,
+	// 			e.to_node,
+
+	// 			e.highway,
+	// 			e.reversed
+
+	// 		FROM edges AS e
+	// 			LEFT JOIN conflated_edges AS c
+	// 				ON e.from_node = c.from_node
+	// 				AND e.to_node = c.to_node
+	// `;
+	// logInfo("LOADING CONFLATION EDGES");
+	// const conflationEdges = db.all(queryConflationEdgesSql);
+	// logInfo("LOADED", d3intFormat(conflationEdges.length), "CONFLATION EDGES");
+
+	// logInfo("STREAMING CONFLATION EDGES");
+	// await generateMainConflationTable(conflationEdges, client, db);
+	// logInfo("COMPLETED STREAMING CONFLATION EDGES");
+
+	// const damaArgs = [
+	// 	'OSM Conflation 1.0',
+	// 	'gis_dataset',
+	// 	'osm_datasets.osm_conflation_1',
+	// 	[['OSM Conflation', 'Road Network']]
+	// ];
+	// await setDamaTables(client, ...damaArgs);
+
+	const dropTablesSql = `
 		BEGIN;
 
-		DROP TABLE IF EXISTS osm_datasets.osm_conflation_1;
+		DROP TABLE IF EXISTS osm_datasets.osm_conflation_1_edges;
 
-		CREATE TABLE osm_datasets.osm_conflation_1(
-			ogc_fid BIGSERIAL PRIMARY KEY,
-			osm BIGINT,
-			ris TEXT,
-			tmc TEXT,
-			year INT,
-			dir INT,
-			n INT,
-			osm_fwd INT, --1 for non-reversed, - for reversed
-			miles DOUBLE PRECISION,
-			wkb_geometry GEOMETRY(LineString, 4032)
-		);
+		DROP TABLE IF EXISTS osm_datasets.osm_conflation_1_nodes;
 
-		COMMIT;
-	`;
+		END;
+	`
+	await client.query(dropTablesSql);
 
-	await client.query(createConflationTableSql);
-	logInfo("CREATED CONFLATION TABLE: osm_datasets.osm_conflation_1");
-
-	const queryConflationEdgesSql = `
-		WITH conflated_edges AS (
-			SELECT
-					tmc,
-
-					'no-ris' AS ris_id,
-
-					from_node,
-					to_node
-
-				FROM npmrds_conflation
-
-			UNION
-
-			SELECT
-					'no-tmc' AS tmc,
-
-					ris_id,
-
-					from_node,
-					to_node
-
-				FROM ris_conflation
-		)
-		SELECT
-				e.way_id,
-				e.pos AS way_index,
-
-				COALESCE(c.tmc, 'no-tmc') AS tmc,
-
-				COALESCE(c.ris_id, 'no-ris') AS ris_id,
-
-				e.from_node,
-				e.to_node,
-
-				e.highway,
-				e.reversed
-
-			FROM edges AS e
-				LEFT JOIN conflated_edges AS c
-					ON e.from_node = c.from_node
-					AND e.to_node = c.to_node
-	`;
-	logInfo("LOADING CONFLATION EDGES");
-	const conflationEdges = db.all(queryConflationEdgesSql);
-	logInfo("LOADED", d3intFormat(conflationEdges.length), "CONFLATION EDGES");
-
-	logInfo("STREAMING CONFLATION EDGES");
-	await streamEdges(conflationEdges, client, db);
-	logInfo("COMPLETED STREAMING CONFLATION EDGES");
-
-	const damaArgs = [
-		'OSM Conflation 1.0',
-		'gis_dataset',
-		'osm_datasets.osm_conflation_1',
-		[['OSM Conflation', 'Road Network']]
-	];
-	await setDamaTables(client, ...damaArgs);
+	await generateNodesTable(client, db);
+	await generateEdgesTable(client, db);
 
 	db.close();
 	await client.end();
@@ -203,7 +217,223 @@ class WayBucket {
   rmSync(WORKING_DIRECTORY, { force: true, recursive: true });
 })()
 
-const streamEdges = async (allEdges, client, db) => {
+const generateEdgesTable = async (client, db) => {
+	const createTableSql = `
+		CREATE TABLE osm_datasets.osm_conflation_1_edges(
+			ogc_fid BIGSERIAL PRIMARY KEY,
+			osm BIGINT,
+			tmc TEXT,
+			ris TEXT,
+			highway TEXT,
+			reversed BOOLEAN,
+			from_node BIGINT,
+			to_node BIGINT,
+			wkb_geometry GEOMETRY(LINESTRING, 4326),
+			FOREIGN KEY(from_node) REFERENCES osm_datasets.osm_conflation_1_nodes(osm_id) ON DELETE CASCADE,
+			FOREIGN KEY(to_node) REFERENCES osm_datasets.osm_conflation_1_nodes(osm_id) ON DELETE CASCADE
+		);
+	`;
+	await client.query(createTableSql);
+
+	const queryEdgesSql = `
+		WITH conflated_edges AS (
+			SELECT
+					tmc,
+					ris_id,
+					n.from_node,
+					n.to_node
+				FROM npmrds_conflation AS n
+					FULL OUTER JOIN ris_conflation AS r
+						ON n.from_node = r.from_node
+						AND n.to_node = r.to_node
+		)
+		SELECT
+				e.way_id,
+				tmc,
+				ris_id,
+				e.highway,
+				e.reversed,
+				e.from_node,
+				e.to_node
+		FROM edges AS e
+			LEFT JOIN conflated_edges AS c
+				ON e.from_node = c.from_node
+				AND e.to_node = c.to_node
+	`;
+	const edges = db.all(queryEdgesSql);
+
+	logInfo("LOADING NODES");
+	const nodes = db.all("SELECT * FROM nodes;");
+	logInfo("LOADED", d3intFormat(nodes.length), "NODES");
+	const nodesMap = nodes.reduce((a, c) => {
+		a.set(c.node_id, [+c.lon, +c.lat]);
+		return a;
+	}, new Map());
+
+	const incAmt = 500000;
+	let logInfoAt = incAmt;
+	let numInserted = 0;
+
+	async function* yieldEdges() {
+		for (const edge of edges) {
+			const {
+				way_id,
+				tmc,
+				ris_id,
+				highway,
+				reversed,
+				from_node,
+				to_node
+			} = edge;
+
+			const fromNode = nodesMap.get(from_node);
+			const toNode = nodesMap.get(to_node);
+
+			const geojson = JSON.stringify({
+				type: "LineString",
+				coordinates: [fromNode, toNode]
+			});
+			const values = [
+				way_id,
+				tmc,
+				ris_id,
+				highway,
+				reversed,
+				from_node,
+				to_node,
+				geojson
+			];
+
+			yield `${ values.join("|") }\n`;
+
+			if (++numInserted >= logInfoAt) {
+				logInfo("INSERTED", d3intFormat(numInserted), "EDGES");
+				logInfoAt += incAmt;
+			}
+		}
+	}
+
+	const copyFromStream = client.query(
+		pgCopyStreams.from(`
+	  	COPY osm_datasets.osm_conflation_1_edges(osm, tmc, ris, highway, reversed, from_node, to_node, wkb_geometry)
+	  	FROM STDIN WITH (FORMAT TEXT, DELIMITER '|', NULL '')
+		`)
+	);
+
+	logInfo("LOADING", d3intFormat(edges.length),"EDGES INTO DB");
+
+	await new Promise((resolve, reject) => {
+		pipeline(
+			Readable.from(yieldEdges()),
+			copyFromStream,
+			error => {
+				if (error) {
+					logInfo("STREAM ERROR:", error);
+					reject(error);
+				}
+				else {
+					resolve();
+				}
+			}
+		)
+	});
+
+	const createGeomIndexSql = `
+    CREATE INDEX osm_conflation_1_edges_geom_idx
+      ON osm_datasets.osm_conflation_1_edges
+      USING GIST(wkb_geometry)
+      WITH (fillfactor = 100);
+	`;
+	await client.query(createGeomIndexSql);
+
+	const createHighwayIndexSql = `
+		CREATE INDEX osm_conflation_1_edges_highway_idx
+      ON osm_datasets.osm_conflation_1_edges(highway)
+      	WITH (fillfactor = 100);
+	`;
+	await client.query(createHighwayIndexSql);
+}
+
+const generateNodesTable = async (client, db) => {
+	const createTableSql = `
+		CREATE TABLE osm_datasets.osm_conflation_1_nodes(
+			ogc_fid BIGSERIAL,
+			osm_id BIGINT PRIMARY KEY,
+			lon DOUBLE PRECISION,
+			lat DOUBLE PRECISION,
+			wkb_geometry GEOMETRY(POINT, 4326)
+		);
+	`;
+	await client.query(createTableSql);
+
+/////////////////////////////////////////////////////////
+//
+// ENSURE ONLY NODES FROM CONFLATED EDGES ARE INCLUDED!!!
+//
+/////////////////////////////////////////////////////////
+	const selectNodesSql = `
+		SELECT node_id, lon, lat
+			FROM nodes;
+	`;
+	const nodes = db.all(selectNodesSql);
+
+	const incAmt = 250000;
+	let logInfoAt = incAmt;
+	let numInserted = 0;
+
+	async function* yieldNodes() {
+		for (const { node_id, lon, lat } of nodes) {
+
+			const geojson = JSON.stringify({
+				type: "Point",
+				coordinates: [+lon, +lat]
+			})
+			const values = [node_id, +lon, +lat, geojson];
+
+			yield `${ values.join("|") }\n`;
+
+			if (++numInserted >= logInfoAt) {
+				logInfo("INSERTED", d3intFormat(numInserted), "NODES");
+				logInfoAt += incAmt;
+			}
+		}
+	}
+
+	const copyFromStream = client.query(
+		pgCopyStreams.from(`
+	  	COPY osm_datasets.osm_conflation_1_nodes(osm_id, lon, lat, wkb_geometry)
+	  	FROM STDIN WITH (FORMAT TEXT, DELIMITER '|', NULL '')
+		`)
+	);
+
+	logInfo("LOADING", d3intFormat(nodes.length),"NODES INTO DB");
+
+	await new Promise((resolve, reject) => {
+		pipeline(
+			Readable.from(yieldNodes()),
+			copyFromStream,
+			error => {
+				if (error) {
+					logInfo("STREAM ERROR:", error);
+					reject(error);
+				}
+				else {
+					resolve();
+				}
+			}
+		)
+	});
+
+	const createGeomIndexSql = `
+    CREATE INDEX osm_conflation_1_nodes_geom_idx
+      ON osm_datasets.osm_conflation_1_nodes
+      USING GIST(wkb_geometry)
+      WITH (fillfactor = 100);
+	`;
+	await client.query(createGeomIndexSql);
+}
+
+const generateMainConflationTable = async (allEdges, client, db) => {
 
 	logInfo("LOADING NODES");
 	const allNodes = db.all("SELECT * FROM nodes;");
@@ -304,12 +534,12 @@ const streamEdges = async (allEdges, client, db) => {
 					values[7] = turf.length(values[8], { units: "miles" });
 					values[8] = JSON.stringify(values[8]);
 
+					yield `${ values.map(v => v === "no-ris" || v === "no-tmc" ? null : v).join("|") }\n`;
+
 					if (++numInserted >= logInfoAt) {
 						logInfo("INSERTED", d3intFormat(numInserted), "GEOMETRIES");
 						logInfoAt += incAmt;
 					}
-
-					yield `${ values.map(v => v === "no-ris" || v === "no-tmc" ? null : v).join("|") }\n`;
 				}
 			}
 		}
